@@ -1,0 +1,379 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Piano Game</title>
+
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: linear-gradient(135deg, #17152b, #34234d);
+  font-family: Arial, sans-serif;
+  color: white;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+}
+
+.game {
+  width: 380px;
+  max-width: 95vw;
+  text-align: center;
+}
+
+h1 {
+  font-size: 36px;
+  margin-bottom: 8px;
+  letter-spacing: 3px;
+}
+
+.subtitle {
+  color: #c6b9dc;
+  margin-bottom: 20px;
+}
+
+.scoreboard {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  background: #ffffff15;
+  padding: 14px;
+  border-radius: 12px;
+}
+
+.board {
+  position: relative;
+  width: 100%;
+  height: 520px;
+  background: #eee;
+  border: 5px solid #ffffff;
+  border-radius: 12px;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.lane {
+  position: relative;
+  border-right: 2px solid #bbb;
+  height: 100%;
+  background: #f8f8f8;
+}
+
+.lane:last-child {
+  border-right: none;
+}
+
+.tile {
+  position: absolute;
+  width: 100%;
+  height: 110px;
+  background: #191919;
+  border: 2px solid #444;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.08s;
+}
+
+.tile:active {
+  background: #555;
+}
+
+.tile.hit {
+  background: #26b88a;
+}
+
+.line {
+  position: absolute;
+  bottom: 85px;
+  width: 100%;
+  height: 4px;
+  background: #ff5470;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: #17152bea;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 20px;
+}
+
+.overlay h2 {
+  font-size: 32px;
+}
+
+.overlay p {
+  color: #ddd;
+}
+
+button {
+  padding: 14px 32px;
+  border: none;
+  border-radius: 30px;
+  background: #b47aff;
+  color: white;
+  font-size: 17px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #9c5de8;
+}
+
+.controls {
+  margin-top: 15px;
+  color: #c6b9dc;
+  font-size: 13px;
+}
+
+.hidden {
+  display: none;
+}
+</style>
+</head>
+
+<body>
+
+<div class="game">
+
+  <h1>PIANO GAME</h1>
+  <p class="subtitle">Não deixe nenhuma tecla escapar!</p>
+
+  <div class="scoreboard">
+    <span>Pontos: <b id="score">0</b></span>
+    <span>Recorde: <b id="best">0</b></span>
+  </div>
+
+  <div class="board" id="board">
+
+    <div class="lane"></div>
+    <div class="lane"></div>
+    <div class="lane"></div>
+    <div class="lane"></div>
+
+    <div class="line"></div>
+
+    <div class="overlay" id="startScreen">
+      <h2>🎹 Piano Game</h2>
+      <p>Toque nas teclas pretas para marcar pontos!</p>
+      <button onclick="startGame()">JOGAR</button>
+    </div>
+
+    <div class="overlay hidden" id="gameOver">
+      <h2>Fim de jogo!</h2>
+      <p>Sua pontuação: <b id="finalScore">0</b></p>
+      <p>Continue tentando bater seu recorde!</p>
+      <button onclick="startGame()">JOGAR NOVAMENTE</button>
+    </div>
+
+  </div>
+
+  <p class="controls">
+    Use as teclas A, S, D, F ou clique nas colunas.
+  </p>
+
+</div>
+
+<script>
+
+let volume = 0.5;
+const volumeMinimo = 0.1;
+const volumeMaximo = 1;
+const board = document.getElementById("board");
+const lanes = [...document.querySelectorAll(".lane")];
+
+const scoreElement = document.getElementById("score");
+const bestElement = document.getElementById("best");
+
+let score = 0;
+let best = Number(localStorage.getItem("pianoBest")) || 0;
+let tiles = [];
+let running = false;
+let speed = 3;
+let spawnTimer;
+let animationFrame;
+let lastSpawn = 0;
+
+bestElement.textContent = best;
+
+function createSound() {
+  const AudioContext =
+    window.AudioContext || window.webkitAudioContext;
+
+  if (!window.audioContext) {
+    window.audioContext = new AudioContext();
+  }
+
+  const ctx = window.audioContext;
+
+  if (ctx.state === "suspended") {
+    ctx.resume();
+  }
+
+  const oscillator = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  oscillator.type = "sine";
+  oscillator.frequency.value = 400;
+
+  gain.gain.setValueAtTime(volume * 0.2, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(
+    0.001, ctx.currentTime + 0.15
+  );
+
+  oscillator.connect(gain);
+  gain.connect(ctx.destination);
+
+  oscillator.start();
+  oscillator.stop(ctx.currentTime + 0.15);
+}
+
+function startGame() {
+  volume = 0.5;
+  score = 0;
+  speed = 3;
+  tiles.forEach(tile => tile.element.remove());
+  tiles = [];
+
+  scoreElement.textContent = score;
+
+  document.getElementById("startScreen")
+    .classList.add("hidden");
+
+  document.getElementById("gameOver")
+    .classList.add("hidden");
+
+  running = true;
+  lastSpawn = performance.now();
+
+  cancelAnimationFrame(animationFrame);
+  animationFrame = requestAnimationFrame(update);
+}
+
+function spawnTile() {
+  const laneIndex = Math.floor(Math.random() * 4);
+
+  const tile = document.createElement("div");
+  tile.className = "tile";
+
+  tile.style.top = "-115px";
+  lanes[laneIndex].appendChild(tile);
+
+  const tileData = {
+    element: tile,
+    lane: laneIndex,
+    y: -115,
+    hit: false
+  };
+
+  tile.addEventListener("click", () => {
+    hitTile(tileData);
+  });
+
+  tiles.push(tileData);
+}
+
+function hitTile(tile) {
+  if (!running || tile.hit) return;
+
+  tile.hit = true;
+  volume = Math.max(volumeMinimo, volume - 0.05);
+  tile.element.classList.add("hit");
+
+  score++;
+  scoreElement.textContent = score;
+
+  createSound();
+
+  setTimeout(() => {
+    tile.element.remove();
+  }, 70);
+
+  tiles = tiles.filter(t => t !== tile);
+
+  if (score > best) {
+    best = score;
+    bestElement.textContent = best;
+    localStorage.setItem("pianoBest", best);
+  }
+
+  if (score % 10 === 0) {
+    speed += 0.5;
+  }
+
+}
+
+function wrongMove() {
+  if (!running) return;
+
+  volume = Math.min(volumeMaximo, volume + 0.1);
+}
+
+function update(time) {
+  if (!running) return;
+
+  if (time - lastSpawn > Math.max(280, 850 - score * 8)) {
+    spawnTile();
+    lastSpawn = time;
+  }
+
+  const boardHeight = board.clientHeight;
+
+  tiles.forEach(tile => {
+    tile.y += speed;
+    tile.element.style.top = tile.y + "px";
+
+    if (tile.y + 110 >= boardHeight - 85) {
+      endGame();
+    }
+  });
+
+  if (running) {
+    animationFrame = requestAnimationFrame(update);
+  }
+}
+
+function endGame() {
+  wrongMove();
+  running = false;
+
+  document.getElementById("finalScore").textContent = score;
+
+  document.getElementById("gameOver")
+    .classList.remove("hidden");
+}
+
+document.addEventListener("keydown", event => {
+  const keys = ["a", "s", "d", "f"];
+  const index = keys.indexOf(event.key.toLowerCase());
+
+  if (index !== -1 && running) {
+    const tile = tiles
+      .filter(t => t.lane === index && !t.hit)
+      .sort((a, b) => b.y - a.y)[0];
+
+    if (tile) hitTile(tile);
+  }7
+
+});
+</script>
+
+</body>
+</html>
